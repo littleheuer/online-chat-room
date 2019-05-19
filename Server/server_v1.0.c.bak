@@ -1,0 +1,140 @@
+/*************************************************************************
+	> File Name: server.c
+	> Author: 
+	> Mail: 
+	> Created Time: 2019年02月21日 星期四 19时01分19秒
+ ************************************************************************/
+
+#include <stdio.h>
+#include <arpa/inet.h>
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>    
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <sys/file.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <time.h>
+#include <stdarg.h>
+
+#include <net/if.h>
+#include <sys/ioctl.h>
+
+#define SERVER_PORT 8731
+#define ETH_NAME "wlp2s0"
+char* get_ip(char*);
+
+int main() {
+    int sfd;
+    struct sockaddr_in c_addr;
+    struct sockaddr_in s_addr;
+    int addr_len = sizeof(c_addr);
+    char buffer[200];
+    int iDataNum;
+    char *ip = (char *)malloc(sizeof(char) * 1024);
+    memset(ip, 0, sizeof(ip));
+    ip = get_ip(ip);
+    sfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sfd < 0) {
+        perror("socket");
+        return 1;
+    }
+    //初始化
+    bzero(&s_addr, sizeof(s_addr));
+    s_addr.sin_family = AF_INET;
+    s_addr.sin_port = htons(SERVER_PORT);
+    //或者s_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    s_addr.sin_addr.s_addr = inet_addr(ip);
+    if(bind(sfd, (struct sockaddr*) &s_addr, sizeof(s_addr)) < 0) {
+        perror("bind");
+        close(sfd);
+        return 1;
+    }
+    if(listen(sfd, 50) < 0) {
+        perror("listen");
+        return 1;
+    }
+    int cfd;
+    printf("\033[32;1m欢迎来到小小白的直播间!\033[0;0m\n");
+    while(1) {
+        printf("端口：%d\n", SERVER_PORT);
+        cfd = accept(sfd, (struct sockaddr*) &c_addr, (socklen_t*) &addr_len);
+        if(cfd < 0) {
+            perror("accpet");
+            continue;
+        }
+        
+        int pid = fork();
+        if(!pid) {
+            //关闭子进程的监听
+            close(sfd);
+            memset(buffer, 0, sizeof(buffer));
+            char name[200];
+            memset(name, 0, sizeof(name));
+            iDataNum = recv(cfd, name, sizeof(name), 0);
+            name[iDataNum] = '\0';
+            printf("用户\033[36;5m[%s]\033[0;0m,ip为%s从%d端口进入直播间\n", name,inet_ntoa(c_addr.sin_addr), htons(c_addr.sin_port));
+            while(1) {
+                memset(buffer, 0, sizeof(buffer));
+                buffer[0] = '\0';
+                iDataNum = recv(cfd, buffer, sizeof(buffer), 0);
+                if(iDataNum < 0) {
+                    printf("recv NULL\n");
+                    continue;
+                }
+                //printf("srting:%d %s\n", iDataNum, buffer);
+                //buffer[iDataNum] = '\0';
+                if(iDataNum == 0 || iDataNum == -1) {
+                    printf("\033[31;1m[%s]退出直播间\033[0;0m\n", name);
+                    close(cfd);
+                    exit(0);
+                }
+                printf("\033[33;1m%s:\033[0;0m:%s\n", name, buffer);
+            }
+            //close(cfd);
+            }
+        else {
+            continue;
+        }
+    }
+    close(sfd);
+    return 0;
+}
+
+char *get_ip(char *ip)
+{
+    int sock;
+    struct sockaddr_in sin;
+    struct ifreq ifr;
+	char *temp_ip = NULL;
+    
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock == -1)
+    {
+        perror("socket");
+        return NULL;                
+    }
+    strncpy(ifr.ifr_name, ETH_NAME, IFNAMSIZ-1);
+    ifr.ifr_name[IFNAMSIZ - 1] = 0;
+    
+    if (ioctl(sock, SIOCGIFADDR, &ifr) < 0)
+    {
+        perror("ioctl");
+        return NULL;
+    }
+ 
+    memcpy(&sin, &ifr.ifr_addr, sizeof(sin));
+	temp_ip = inet_ntoa(sin.sin_addr);
+	strcpy(ip,temp_ip);
+    fprintf(stdout, "服务器ip地址(wlp2s0): %s\n", temp_ip);
+ 
+	return ip;
+}
